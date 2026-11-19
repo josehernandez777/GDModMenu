@@ -1,4 +1,3 @@
-
 name: Android Build
 
 on:
@@ -110,7 +109,16 @@ jobs:
           sudo apt-get install -y -qq patchelf zip unzip
           pip install -q gdown
           if echo "$GD_APK_URL" | grep -q "drive.google.com"; then
-            gdown --fuzzy "$GD_APK_URL" -O gd.apk
+            FILE_ID=$(echo "$GD_APK_URL" | sed -n 's#.*/d/\([^/?]*\).*#\1#p')
+            if [ -z "$FILE_ID" ]; then
+              FILE_ID=$(echo "$GD_APK_URL" | sed -n 's#.*[?&]id=\([^&]*\).*#\1#p')
+            fi
+            if [ -z "$FILE_ID" ]; then
+              echo "::error::No pude sacar el ID del link de Drive."
+              exit 1
+            fi
+            echo "Drive file id: $FILE_ID"
+            gdown "$FILE_ID" -O gd.apk
           else
             curl -fL --retry 3 -o gd.apk "$GD_APK_URL"
           fi
