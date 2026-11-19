@@ -1,3 +1,4 @@
+
 name: Android Build
 
 on:
@@ -58,6 +59,7 @@ jobs:
         uses: android-actions/setup-android@v3
         with:
           accept-android-sdk-licenses: true
+          log-accepted-android-sdk-licenses: false
 
       - name: Install Android SDK, NDK and CMake
         shell: bash
