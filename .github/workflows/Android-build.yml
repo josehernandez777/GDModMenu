@@ -1,3 +1,4 @@
+
 name: Android Build
 
 on:
@@ -6,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       gd_apk_url:
-        description: "Optional: direct download URL of YOUR Geometry Dash APK to patch"
+        description: "Optional: link of YOUR Geometry Dash APK to patch (Google Drive link must be public)"
         required: false
         default: ""
 
@@ -107,7 +108,14 @@ jobs:
           set -euo pipefail
           sudo apt-get update -qq
           sudo apt-get install -y -qq patchelf zip unzip
-          curl -fL --retry 3 -o gd.apk "$GD_APK_URL"
+          pip install -q gdown
+          if echo "$GD_APK_URL" | grep -q "drive.google.com"; then
+            gdown --fuzzy "$GD_APK_URL" -O gd.apk
+          else
+            curl -fL --retry 3 -o gd.apk "$GD_APK_URL"
+          fi
+          ls -l gd.apk
+          unzip -tq gd.apk >/dev/null || { echo "::error::Lo descargado no es un APK. Revisa que el link sea publico."; exit 1; }
           bash "$PROJECT_DIR/tools/patch_gd_apk.sh" gd.apk payload gd-patched.apk
 
       - name: Upload patched game APK
