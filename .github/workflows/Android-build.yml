@@ -1,10 +1,14 @@
-
 name: Android Build
 
 on:
   push:
   pull_request:
   workflow_dispatch:
+    inputs:
+      gd_apk_url:
+        description: "Optional: direct download URL of YOUR Geometry Dash APK to patch"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -22,31 +26,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
           ZIP_FILE=$(find . -maxdepth 1 -type f -iname "*.zip" | head -n 1)
-
           if [ -z "$ZIP_FILE" ]; then
             echo "::error::No se encontró ningún ZIP en la raíz."
             exit 1
           fi
-
           mkdir -p extracted
           unzip -q "$ZIP_FILE" -d extracted
-
-          PROJECT_FILE=$(find extracted -type f \( \
-            -name "settings.gradle" -o \
-            -name "settings.gradle.kts" \
-          \) | head -n 1)
-
+          PROJECT_FILE=$(find extracted -type f \( -name "settings.gradle" -o -name "settings.gradle.kts" \) | head -n 1)
           if [ -z "$PROJECT_FILE" ]; then
             echo "::error::No se encontró settings.gradle."
             exit 1
           fi
-
           PROJECT_DIR=$(dirname "$PROJECT_FILE")
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-
-          echo "Proyecto encontrado: $PROJECT_DIR"
           ls -la "$PROJECT_DIR"
 
       - name: Set up JDK 17
@@ -66,41 +59,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
-          sdkmanager --install \
-            "platforms;android-34" \
-            "build-tools;34.0.0" \
-            "ndk;26.1.10909125" \
-            "cmake;3.22.1"
+          sdkmanager --install "platforms;android-34" "build-tools;34.0.0" "ndk;26.1.10909125" "cmake;3.22.1"
 
       - name: Set up Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.7"
 
-      - name: Verify project structure
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          test -d "$PROJECT_DIR/app" || {
-            echo "::error::No existe el módulo app."
-            exit 1
-          }
-
-          echo "Estructura del proyecto verificada."
-
       - name: Build Debug APK
         shell: bash
         run: |
           set -euo pipefail
-
-          gradle -p "$PROJECT_DIR" \
-            --no-daemon \
-            --stacktrace \
-            testDebugUnitTest \
-            lintDebug \
-            assembleDebug
+          gradle -p "$PROJECT_DIR" --no-daemon --stacktrace testDebugUnitTest lintDebug assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -109,6 +79,45 @@ jobs:
           path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
+
+      - name: Collect payload libraries
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=$(ls "$PROJECT_DIR"/app/build/outputs/apk/debug/*.apk | head -n 1)
+          for abi in arm64-v8a armeabi-v7a; do
+            mkdir -p "payload/$abi"
+            unzip -j -o "$APK" "lib/$abi/libgdmenu_payload.so" -d "payload/$abi"
+          done
+          ls -R payload
+
+      - name: Upload payload libraries
+        uses: actions/upload-artifact@v4
+        with:
+          name: gd-mod-menu-payload
+          path: payload
+          retention-days: 14
+
+      - name: Patch your Geometry Dash APK (optional)
+        if: ${{ github.event.inputs.gd_apk_url != '' }}
+        shell: bash
+        env:
+          GD_APK_URL: ${{ github.event.inputs.gd_apk_url }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq patchelf zip unzip
+          curl -fL --retry 3 -o gd.apk "$GD_APK_URL"
+          bash "$PROJECT_DIR/tools/patch_gd_apk.sh" gd.apk payload gd-patched.apk
+
+      - name: Upload patched game APK
+        if: ${{ github.event.inputs.gd_apk_url != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: gd-patched-apk
+          path: gd-patched.apk
+          if-no-files-found: error
+          retention-days: 3
 
       - name: Upload build reports
         if: always()
