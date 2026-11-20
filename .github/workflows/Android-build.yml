@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       gd_apk_url:
-        description: "Optional: link of YOUR Geometry Dash APK to patch (Google Drive link must be public)"
+        description: "Optional: link of YOUR Geometry Dash APK or .apks backup to patch"
         required: false
         default: ""
 
@@ -113,25 +113,24 @@ jobs:
             if [ -z "$FILE_ID" ]; then
               FILE_ID=$(echo "$GD_APK_URL" | sed -n 's#.*[?&]id=\([^&]*\).*#\1#p')
             fi
-            if [ -z "$FILE_ID" ]; then
-              echo "::error::No pude sacar el ID del link de Drive."
-              exit 1
-            fi
+            [ -n "$FILE_ID" ] || { echo "::error::No pude sacar el ID del link de Drive."; exit 1; }
             echo "Drive file id: $FILE_ID"
-            gdown "$FILE_ID" -O gd.apk
+            gdown "$FILE_ID" -O gd_input
           else
-            curl -fL --retry 3 -o gd.apk "$GD_APK_URL"
+            curl -fL --retry 3 -o gd_input "$GD_APK_URL"
           fi
-          ls -l gd.apk
-          unzip -tq gd.apk >/dev/null || { echo "::error::Lo descargado no es un APK. Revisa que el link sea publico."; exit 1; }
-          bash "$PROJECT_DIR/tools/patch_gd_apk.sh" gd.apk payload gd-patched.apk
+          ls -l gd_input
+          unzip -tq gd_input >/dev/null || { echo "::error::Lo descargado no es un APK/APKS. Revisa que el link sea publico."; exit 1; }
+          echo "=== contenido del archivo ==="
+          unzip -l gd_input | grep -E '\.apk$|\.so$|AndroidManifest.xml' || true
+          bash "$PROJECT_DIR/tools/patch_gd_apk.sh" gd_input payload gd-patched.apk
 
       - name: Upload patched game APK
         if: ${{ github.event.inputs.gd_apk_url != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: gd-patched-apk
-          path: gd-patched.apk
+          path: gd-patched.*
           if-no-files-found: error
           retention-days: 3
 
